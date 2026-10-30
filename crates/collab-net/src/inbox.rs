@@ -15,6 +15,11 @@ pub type Waker = Arc<dyn Fn() + Send + Sync>;
 /// batch as a fatal sequence gap, so losing one would end the session.
 const MAX_EVENTS: usize = 10_000;
 
+/// The most peers whose presence is kept between two drains. Past it a new peer's presence is
+/// ignored, and as peers send presence only when it changes, that peer shows again only after
+/// its next change; peers already kept still update, so a flood of new ids can't push them out.
+const MAX_PRESENCE: usize = 1_024;
+
 #[derive(Default)]
 struct State {
     /// Arrival number of the next event, so [`Inbox::drain`] can merge the two queues in order.
@@ -23,6 +28,7 @@ struct State {
     syncs: VecDeque<(u64, Event)>,
     /// Every other event, capped at [`MAX_EVENTS`].
     others: VecDeque<(u64, Event)>,
+    /// The latest presence of each peer, for at most [`MAX_PRESENCE`] peers.
     presence: BTreeMap<u32, Presence>,
 }
 
@@ -64,9 +70,14 @@ impl Inbox {
         });
     }
 
-    /// Peer `id`'s latest presence (replaces one not taken yet).
+    /// Peer `id`'s latest presence (replaces one not taken yet). Ignored for a new peer when the
+    /// presence of [`MAX_PRESENCE`] peers is already waiting.
     pub fn presence(&self, id: u32, p: Presence) {
         self.with(|s| {
+            if s.presence.len() >= MAX_PRESENCE && !s.presence.contains_key(&id) {
+                log::warn!("live session: presence of {MAX_PRESENCE} peers not taken; ignoring peer {id}");
+                return;
+            }
             s.presence.insert(id, p);
         });
     }
@@ -97,6 +108,7 @@ impl Inbox {
 mod tests {
     use super::*;
     use figcraft_collab::message::ServerMsg;
+    use figcraft_doc::NodeId;
 
     fn reject(batch_id: u64) -> Event {
         Event::Sync(ServerMsg::Reject { batch_id, reason: String::new(), fixes: Vec::new() })
@@ -140,5 +152,70 @@ mod tests {
         let ids = sync_ids(&out);
         assert_eq!(ids.len() as u64, n, "Sync events dropped");
         assert!(ids.iter().copied().eq(0..n), "Sync events out of order");
+    }
+
+    fn at(x: f64) -> Presence {
+        Presence { cursor: Some((NodeId(1), x, x)), ..Presence::default() }
+    }
+
+    fn presence_of(events: &[Event]) -> Vec<(u32, Presence)> {
+        events
+            .iter()
+            .filter_map(|e| match e {
+                Event::Presence(id, p) => Some((*id, p.clone())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_flood_of_peer_ids_keeps_the_presence_map_capped() {
+        let inbox = Inbox::new(Arc::new(|| {}));
+        for id in 0..MAX_PRESENCE as u32 * 4 {
+            inbox.presence(id, Presence::default());
+        }
+        let ids: Vec<u32> = presence_of(&inbox.drain()).into_iter().map(|(id, _)| id).collect();
+        assert!(ids.iter().copied().eq(0..MAX_PRESENCE as u32), "{} peers kept", ids.len());
+    }
+
+    #[test]
+    fn a_kept_peer_still_updates_when_the_map_is_full() {
+        let inbox = Inbox::new(Arc::new(|| {}));
+        for id in 0..MAX_PRESENCE as u32 * 2 {
+            inbox.presence(id, at(1.0));
+        }
+        inbox.presence(0, at(9.0));
+        let kept = presence_of(&inbox.drain());
+        assert_eq!(kept.len(), MAX_PRESENCE);
+        assert_eq!(kept.first(), Some(&(0, at(9.0))));
+    }
+
+    #[test]
+    fn drain_returns_the_latest_presence_per_peer_and_frees_the_cap() {
+        let inbox = Inbox::new(Arc::new(|| {}));
+        inbox.presence(1, at(1.0));
+        inbox.presence(2, at(2.0));
+        inbox.presence(1, at(3.0));
+        assert_eq!(presence_of(&inbox.drain()), vec![(1, at(3.0)), (2, at(2.0))]);
+        assert!(inbox.drain().is_empty());
+        for id in 0..MAX_PRESENCE as u32 {
+            inbox.presence(id, at(1.0));
+        }
+        inbox.drain();
+        inbox.presence(MAX_PRESENCE as u32, at(4.0));
+        assert_eq!(presence_of(&inbox.drain()), vec![(MAX_PRESENCE as u32, at(4.0))]);
+    }
+
+    #[test]
+    fn a_peer_leaving_a_full_map_makes_room_for_a_new_one() {
+        let inbox = Inbox::new(Arc::new(|| {}));
+        for id in 0..MAX_PRESENCE as u32 {
+            inbox.presence(id, at(1.0));
+        }
+        inbox.push(Event::PeerLeft(0));
+        inbox.presence(MAX_PRESENCE as u32, at(5.0));
+        let kept = presence_of(&inbox.drain());
+        assert_eq!(kept.len(), MAX_PRESENCE);
+        assert_eq!(kept.last(), Some(&(MAX_PRESENCE as u32, at(5.0))));
     }
 }
