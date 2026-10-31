@@ -263,11 +263,15 @@ mod components_behaviour_tests;
 #[cfg(test)]
 mod components_scale_tests;
 #[cfg(test)]
+mod connector_anywhere_tests;
+#[cfg(test)]
 mod convert_container_tests;
 #[cfg(test)]
 mod cursor_tests;
 #[cfg(test)]
 mod dark_page_text_tests;
+#[cfg(test)]
+mod dash_cap_tests;
 #[cfg(test)]
 mod datafill_tests;
 #[cfg(test)]

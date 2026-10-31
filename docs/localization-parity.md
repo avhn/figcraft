@@ -6,7 +6,7 @@ FigCraft's interface has a localization layer with an English catalog, a Russian
 by a native speaker, and Spanish (with a Latin American overlay), French, German, Brazilian
 Portuguese, Japanese, Korean, Simplified Chinese, Indonesian, Vietnamese, Bosnian and Czech drafts (machine-drafted,
 waiting for native speakers' review), plus Swedish and Turkish catalogs. This page lists the twelve key
-languages of the craftrules standard, then the other languages Figma ships. How to add a
+languages, then the other languages Figma ships. How to add a
 language: [`translating.md`](translating.md).
 
 ## What Figma ships
