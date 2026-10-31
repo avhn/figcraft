@@ -25,7 +25,7 @@ const BAR_BUTTON: f32 = 32.0;
 /// Size of a tab's close cross.
 const CLOSE_ICON: f32 = 12.0;
 /// Room kept for a tab's live mark.
-const LIVE_MARK_WIDTH: f32 = 22.0;
+const LIVE_MARK_WIDTH: f32 = 26.0;
 const OPEN_TIME: f64 = 0.18;
 
 /// Which tabs were open last frame and when the newly opened ones appeared. It is updated in place
@@ -502,7 +502,7 @@ fn paint_tab(ui: &Ui, t: &Tokens, tab: &TabPaint) {
         (w - mark_w - if dirty { 72.0 } else { 60.0 }).max(0.0),
     );
     if let Some(shared) = live {
-        let at = Rect::from_center_size(pos2(paint_r.max.x - 38.0, paint_r.center().y), Vec2::splat(BAR_ICON));
+        let at = Rect::from_center_size(pos2(paint_r.max.x - 42.0, paint_r.center().y), Vec2::splat(BAR_ICON));
         icons::paint(&painter, at, crate::online::mark(shared), if shared { t.success } else { t.icon_secondary }.linear_multiply(progress));
     }
     if dirty {
